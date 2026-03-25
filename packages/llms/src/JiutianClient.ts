@@ -62,8 +62,12 @@ export class JiutianClient implements LLMClient {
 			// Jiutian temperature range: 0-1.0 (doc says 1.0 max)
 			// Use 0.9 for reliable tool calling while staying in valid range
 			temperature: Math.min(config.temperature ?? 0.9, 1.0),
-			maxRetries: config.maxRetries ?? 2,
+			// Increase retries for Jiutian model instability
+			maxRetries: config.maxRetries ?? 3,
 			apiKey: config.apiKey || '',
+			// Provide default values for optional properties
+			disableNamedToolChoice: config.disableNamedToolChoice ?? false,
+			customFetch: config.customFetch ?? globalThis.fetch,
 		}
 
 		// Support custom fetch (e.g., for proxy)
@@ -214,15 +218,15 @@ export class JiutianClient implements LLMClient {
 
 		// 7. Get tool call from response
 		// Note: Jiutian sometimes returns finish_reason: "tool_calls" with empty tool_calls array
-		// Retry automatically if this happens
+		// This is a known model instability issue - automatic retry will handle it
 		const toolCallName = choice?.message?.tool_calls?.[0]?.function?.name
 
 		if (!toolCallName) {
 			// Jiutian edge case: returned finish_reason "tool_calls" but no tool_calls
-			// This is a known issue with Jiutian models - retry with higher temperature
+			// This is retryable - the model may succeed on next attempt
 			throw new InvokeError(
 				InvokeErrorType.NO_TOOL_CALL,
-				'Jiutian returned finish_reason "tool_calls" but no tool_calls in response. This is a model limitation.',
+				'Jiutian model returned empty tool_calls. This is a known instability issue.',
 				undefined,
 				data
 			)

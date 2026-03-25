@@ -4,9 +4,9 @@
     "version": "1.6.2",
     "type": "module",
     "workspaces": [
+        "packages/llms",
         "packages/page-controller",
         "packages/ui",
-        "packages/llms",
         "packages/core",
         "packages/page-agent",
         "packages/mcp",

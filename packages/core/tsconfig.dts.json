@@ -4,6 +4,6 @@
         // @workaround DTS bug
         // dts do not work with monorepo path mapping
         // disable path mapping for it
-        "paths": {}
+        // "paths": {}
     }
 }
