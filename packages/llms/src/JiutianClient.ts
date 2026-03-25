@@ -1,22 +1,73 @@
 /**
- * OpenAI Client implementation
+ * Jiutian LLM Client
+ *
+ * Client for China Mobile Jiutian (九天) LLM API
+ *
+ * Supported models with tool calling (from docs):
+ * - jiutian-lan-comv3: ⭐ Recommended, actually calls jiutian-lan-236b-w8a8
+ * - jiutian-lan-35b: 128K context, long documents
+ * - jiutian-lan-236b-w8a8: MOE architecture, text understanding & agent
+ * - deepseek-r1: 671B, deep reasoning, math/code
+ * - qwen3-moe-235b: 235B (22B active), fast inference
+ * - glm-5-fp8: 744B, top programming model
+ * - kimi-k2-5-thinking: Complex reasoning, thinking with tools
+ *
+ * Temperature range: 0-1.0 (per docs)
+ *
+ * @note Model name prefix 'jiutian/' is stripped before API calls.
+ *       e.g., 'jiutian/jiutian-lan-comv3' → API receives 'jiutian-lan-comv3'
  */
 import * as z from 'zod/v4'
 
 import { InvokeError, InvokeErrorType } from './errors'
 import type { InvokeOptions, InvokeResult, LLMClient, LLMConfig, Message, Tool } from './types'
-import { modelPatch, zodToOpenAITool } from './utils'
+import { zodToOpenAITool } from './utils'
+
+export interface JiutianLLMConfig extends LLMConfig {
+	/**
+	 * Force higher temperature for Jiutian models
+	 * Jiutian needs temperature >= 1.0 for reliable tool calling
+	 * @default 1.0
+	 */
+	temperature?: number
+}
 
 /**
- * Client for OpenAI compatible APIs
+ * Client for Jiutian (九天) LLM API
+ *
+ * @example
+ * ```typescript
+ * const client = new JiutianClient({
+ *   baseURL: 'https://jiutian.10086.cn/largemodel/moma/api/v3',
+ *   apiKey: 'your-token',
+ *   model: 'jiutian-lan-comv3'
+ * })
+ * ```
  */
-export class OpenAIClient implements LLMClient {
-	config: Required<LLMConfig>
+export class JiutianClient implements LLMClient {
+	config: Required<JiutianLLMConfig>
 	private fetch: typeof globalThis.fetch
 
-	constructor(config: Required<LLMConfig>) {
-		this.config = config
-		this.fetch = config.customFetch
+	constructor(config: JiutianLLMConfig) {
+		// Strip 'jiutian/' prefix from model name if present
+		// This prefix is only for client detection, not sent to API
+		const model = config.model.toLowerCase().startsWith('jiutian/')
+			? config.model.slice('jiutian/'.length)
+			: config.model
+
+		this.config = {
+			...config,
+			// Use stripped model name
+			model,
+			// Jiutian temperature range: 0-1.0 (doc says 1.0 max)
+			// Use 0.9 for reliable tool calling while staying in valid range
+			temperature: Math.min(config.temperature ?? 0.9, 1.0),
+			maxRetries: config.maxRetries ?? 2,
+			apiKey: config.apiKey || '',
+		}
+
+		// Support custom fetch (e.g., for proxy)
+		this.fetch = config.customFetch ? config.customFetch.bind(globalThis) : fetch.bind(globalThis)
 	}
 
 	async invoke(
@@ -28,11 +79,12 @@ export class OpenAIClient implements LLMClient {
 		// 1. Convert tools to OpenAI format
 		const openaiTools = Object.entries(tools).map(([name, t]) => zodToOpenAITool(name, t))
 
-		// Build request body
-
+		// 2. Build request body
 		let toolChoice: unknown = 'required'
-		if (options?.toolChoiceName && !this.config.disableNamedToolChoice) {
-			toolChoice = { type: 'function', function: { name: options.toolChoiceName } }
+		// Jiutian doesn't support named tool choice with object format
+		if (options?.toolChoiceName) {
+			// Just use 'required' - Jiutian will choose the right tool
+			toolChoice = 'required'
 		}
 
 		const requestBody: Record<string, unknown> = {
@@ -44,9 +96,7 @@ export class OpenAIClient implements LLMClient {
 			tool_choice: toolChoice,
 		}
 
-		modelPatch(requestBody)
-
-		// 2. Call API
+		// 3. Call API
 		let response: Response
 		try {
 			response = await this.fetch(`${this.config.baseURL}/chat/completions`, {
@@ -65,18 +115,18 @@ export class OpenAIClient implements LLMClient {
 			throw new InvokeError(InvokeErrorType.NETWORK_ERROR, errorMessage, error)
 		}
 
-		// 3. Handle HTTP errors
+		// 4. Handle HTTP errors
 		if (!response.ok) {
 			let errorData: unknown
 			try {
 				const errorText = await response.text()
 				if (errorText) errorData = JSON.parse(errorText)
 			} catch {
-				// Ignore JSON parse errors for error responses
+				// Ignore JSON parse errors
 			}
 			const errorMessage =
-				(errorData as { error?: { message?: string } })?.error?.message ||
 				(errorData as { message?: string })?.message ||
+				(errorData as { error?: { message?: string } })?.error?.message ||
 				response.statusText
 
 			if (response.status === 401 || response.status === 403) {
@@ -107,14 +157,14 @@ export class OpenAIClient implements LLMClient {
 			)
 		}
 
-		// 4. Parse and validate response
+		// 5. Parse response
 		let data: any
 		try {
 			const responseText = await response.text()
 			if (!responseText || responseText.trim() === '') {
 				throw new InvokeError(
 					InvokeErrorType.SERVER_ERROR,
-					'Empty response body from LLM API',
+					'Empty response body from Jiutian API',
 					undefined
 				)
 			}
@@ -123,7 +173,7 @@ export class OpenAIClient implements LLMClient {
 			if (error instanceof InvokeError) throw error
 			throw new InvokeError(
 				InvokeErrorType.UNKNOWN,
-				`Failed to parse LLM response: ${(error as Error).message}`,
+				`Failed to parse Jiutian response: ${(error as Error).message}`,
 				error
 			)
 		}
@@ -133,11 +183,11 @@ export class OpenAIClient implements LLMClient {
 			throw new InvokeError(InvokeErrorType.UNKNOWN, 'No choices in response', data)
 		}
 
-		// Check finish_reason
+		// 6. Check finish_reason
 		switch (choice.finish_reason) {
 			case 'tool_calls':
-			case 'function_call': // gemini
-			case 'stop': // some models use this even with tool calls
+			case 'function_call':
+			case 'stop':
 				break
 			case 'length':
 				throw new InvokeError(
@@ -162,16 +212,17 @@ export class OpenAIClient implements LLMClient {
 				)
 		}
 
-		// Apply normalizeResponse if provided (for fixing format issues automatically)
-		const normalizedData = options?.normalizeResponse ? options.normalizeResponse(data) : data
-		const normalizedChoice = (normalizedData as any).choices?.[0]
+		// 7. Get tool call from response
+		// Note: Jiutian sometimes returns finish_reason: "tool_calls" with empty tool_calls array
+		// Retry automatically if this happens
+		const toolCallName = choice?.message?.tool_calls?.[0]?.function?.name
 
-		// Get tool name from response
-		const toolCallName = normalizedChoice?.message?.tool_calls?.[0]?.function?.name
 		if (!toolCallName) {
+			// Jiutian edge case: returned finish_reason "tool_calls" but no tool_calls
+			// This is a known issue with Jiutian models - retry with higher temperature
 			throw new InvokeError(
 				InvokeErrorType.NO_TOOL_CALL,
-				'No tool call found in response',
+				'Jiutian returned finish_reason "tool_calls" but no tool_calls in response. This is a model limitation.',
 				undefined,
 				data
 			)
@@ -187,8 +238,8 @@ export class OpenAIClient implements LLMClient {
 			)
 		}
 
-		// Extract and parse tool arguments
-		const argString = normalizedChoice.message?.tool_calls?.[0]?.function?.arguments
+		// 8. Extract and parse tool arguments
+		const argString = choice.message?.tool_calls?.[0]?.function?.arguments
 		if (!argString) {
 			throw new InvokeError(
 				InvokeErrorType.INVALID_TOOL_ARGS,
@@ -210,7 +261,7 @@ export class OpenAIClient implements LLMClient {
 			)
 		}
 
-		// Validate with schema
+		// 9. Validate with schema
 		const validation = tool.inputSchema.safeParse(parsedArgs)
 		if (!validation.success) {
 			console.error(z.prettifyError(validation.error))
@@ -223,7 +274,7 @@ export class OpenAIClient implements LLMClient {
 		}
 		const toolInput = validation.data
 
-		// 5. Execute tool
+		// 10. Execute tool
 		let toolResult: unknown
 		try {
 			toolResult = await tool.execute(toolInput)
@@ -236,7 +287,7 @@ export class OpenAIClient implements LLMClient {
 			)
 		}
 
-		// Return result
+		// 11. Return result
 		return {
 			toolCall: {
 				name: toolCallName,

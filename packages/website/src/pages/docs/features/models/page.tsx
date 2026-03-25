@@ -15,6 +15,15 @@ const BASELINE = new Set([
 
 // Models grouped by brand, newest first
 const MODEL_GROUPS: Record<string, string[]> = {
+	中国移动九天: [
+		'jiutian-lan-comv3 ⭐', // Recommended, calls jiutian-lan-236b-w8a8
+		'jiutian-lan-35b',
+		'jiutian-lan-236b-w8a8',
+		'glm-5-fp8',
+		'kimi-k2-5-thinking',
+		'deepseek-r1',
+		'qwen3-moe-235b',
+	],
 	Qwen: [
 		'qwen3.5-plus',
 		'qwen3.5-flash',
@@ -115,7 +124,14 @@ export default function Models() {
 			<section className="mb-10">
 				<Heading id="configuration">{isZh ? '配置方式' : 'Configuration'}</Heading>
 				<CodeEditor
-					code={`// OpenAI-compatible services (e.g., Alibaba Bailian)
+					code={`// 九天大模型 (中国移动) - 推荐用 jiutian-lan-comv3
+const pageAgent = new PageAgent({
+  baseURL: 'http://localhost:5175/proxy/https://jiutian.10086.cn/largemodel/moma/api/v3',
+  apiKey: 'your-jiutian-api-key',
+  model: 'jiutian-lan-comv3'  // ⭐ 推荐：文档指定模型，实际调用 236b-w8a8
+});
+
+// OpenAI-compatible services
 const pageAgent = new PageAgent({
   baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKey: 'your-api-key',

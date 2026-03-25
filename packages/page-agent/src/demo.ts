@@ -17,21 +17,24 @@ const DEMO_MODEL = 'qwen3.5-plus'
 const DEMO_BASE_URL = 'https://page-ag-testing-ohftxirgbn.cn-shanghai.fcapp.run'
 const DEMO_API_KEY = 'NA'
 
+// Capture currentScript BEFORE setTimeout (it becomes null in async callback)
+const scriptElement = document.currentScript as HTMLScriptElement | null
+const scriptSrc = scriptElement?.src || null
+
 // in case document.x is not ready yet
 setTimeout(() => {
-	const currentScript = document.currentScript as HTMLScriptElement | null
 	let config: PageAgentConfig
 
-	if (currentScript) {
-		console.log('🚀 page-agent.js detected current script:', currentScript.src)
-		const url = new URL(currentScript.src)
+	if (scriptSrc) {
+		console.log('🚀 page-agent.js detected script src:', scriptSrc)
+		const url = new URL(scriptSrc)
 		const model = url.searchParams.get('model') || DEMO_MODEL
 		const baseURL = url.searchParams.get('baseURL') || DEMO_BASE_URL
 		const apiKey = url.searchParams.get('apiKey') || DEMO_API_KEY
 		const language = (url.searchParams.get('lang') as 'zh-CN' | 'en-US') || 'zh-CN'
 		config = { model, baseURL, apiKey, language }
 	} else {
-		console.log('🚀 page-agent.js no current script detected, using default demo config')
+		console.log('🚀 page-agent.js no script src detected, using default demo config')
 		config = {
 			model: import.meta.env.LLM_MODEL_NAME ? import.meta.env.LLM_MODEL_NAME : DEMO_MODEL,
 			baseURL: import.meta.env.LLM_BASE_URL ? import.meta.env.LLM_BASE_URL : DEMO_BASE_URL,

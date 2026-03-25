@@ -11,7 +11,8 @@
         "packages/page-agent",
         "packages/mcp",
         "packages/extension",
-        "packages/website"
+        "packages/website",
+        "packages/proxy"
     ],
     "description": "AI-powered UI agent for web applications",
     "author": "Simon<gaomeng1900>",
@@ -28,6 +29,7 @@
         "start": "npm run dev --workspace=@page-agent/website",
         "dev:ext": "npm run dev -w @page-agent/ext",
         "dev:demo": "npm run dev:demo --workspace=page-agent",
+        "dev:proxy": "node --env-file=packages/proxy/.env packages/proxy/src/index.js",
         "build": "npm run build:libs && npm run build:website",
         "build:libs": "npm run build --workspaces --if-present",
         "build:website": "npm run build:website --workspace=@page-agent/website",

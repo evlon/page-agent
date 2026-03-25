@@ -1,0 +1,9 @@
+{
+  "name": "@page-agent/proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "dev": "node --env-file=.env src/index.js"
+  }
+}

@@ -38,4 +38,4 @@ dist-ssr
 .claude
 .cursor
 .gemini
-CLAUDE.md
+CLAUDE.mdpackages/proxy/.env
